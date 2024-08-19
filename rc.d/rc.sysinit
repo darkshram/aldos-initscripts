@@ -22,6 +22,10 @@ if [ -z "$HOSTNAME" -o "$HOSTNAME" = "(none)" ]; then
     HOSTNAME=localhost
 fi
 
+is_mounted() {
+    mount | awk -v DIR="$1" '{if ($3 == DIR) { exit 0}} ENDFILE{exit -1}'
+}
+
 if [ ! -e /proc/mounts ]; then
     /bin/mount -t proc -o nosuid,nodev,noexec proc /proc >/dev/null 2>&1
     /bin/mount -t sysfs -o seclabel,nosuid,nodev,noexec sysfs /sys >/dev/null 2>&1
@@ -87,9 +91,31 @@ relabel_selinux() {
     reboot -f
 }
 
-# Only show text banner if booting with upstart.
+# Only show text banner if booting with upstart and SysV.
 # This is Unnecesary with Epoch and OpenRC.
-if /lib/upstart/initctl list > /dev/null 2> /dev/null; then
+if [ "$(readlink /proc/1/exe)" = "/lib/upstart/init" ] > /dev/null 2> /dev/null; then
+# Print a text banner.
+echo -en $"\t\tBienvenido a "
+read -r system_release < /etc/system-release
+if [[ "$system_release" == *"Red Hat"* ]]; then
+ [ "$BOOTUP" = "color" ] && echo -en "\\033[0;31m"
+ echo -en "Red Hat"
+ [ "$BOOTUP" = "color" ] && echo -en "\\033[0;39m"
+ PRODUCT=$(sed "s/Red Hat \(.*\) release.*/\1/" /etc/system-release)
+ echo " $PRODUCT"
+elif [[ "$system_release" == *ALDOS* ]]; then
+ [ "$BOOTUP" = "color" ] && echo -en "\\033[0;31m"
+ echo -en "ALDOS"
+ [ "$BOOTUP" = "color" ] && echo -en "\\033[0;39m"
+ PRODUCT=$(sed "s/ALDOS \(.*\) \?release.*/\1/" /etc/system-release)
+ echo " $PRODUCT"
+else
+ PRODUCT=$(sed "s/ release.*//g" /etc/system-release)
+ echo "$PRODUCT"
+fi
+fi
+
+if [ "$(readlink /proc/1/exe)" = "/lib/sysvinit/init" ] > /dev/null 2> /dev/null; then
 # Print a text banner.
 echo -en $"\t\tBienvenido a "
 read -r system_release < /etc/system-release
@@ -256,7 +282,7 @@ if strstr "$cmdline" noreadonlyroot ; then
 	READONLY=no
 fi
 
-if [ "$READONLY" = "yes" -o "$TEMPORARY_STATE" = "yes" ]; then
+if [ "${READONLY}" = "yes" -o "$TEMPORARY_STATE" = "yes" ]; then
 
 	mount_empty() {
 		if [ -e "$1" ]; then
@@ -398,7 +424,7 @@ _RUN_QUOTACHECK=0
 if strstr "$cmdline" forcequotacheck || [ -f /forcequotacheck ] ; then
 	_RUN_QUOTACHECK=1
 fi
-if [ -z "$fastboot" -a "$READONLY" != "yes" ]; then
+if [ -z "$fastboot" -a "${READONLY}" != "yes" ]; then
 
         STRING=$"Checking filesystems"
 	echo $STRING
@@ -447,7 +473,7 @@ fi
 
 remount_needed() {
   local state oldifs
-  [ "$READONLY" = "yes" ] && return 1
+  [ "${READONLY}" = "yes" ] && return 1
   state=$(LC_ALL=C awk '/ \/ / && ($3 !~ /rootfs/) { print $4 }' /proc/mounts)
   oldifs=$IFS
   IFS=","
@@ -481,25 +507,30 @@ if [ -n "$SELINUX_STATE" ]; then
 fi
 
 # If relabeling, relabel mount points.
-if [ -n "$SELINUX_STATE" -a "$READONLY" != "yes" ]; then
+if [ -n "$SELINUX_STATE" -a "${READONLY}" != "yes" ]; then
     if strstr "$cmdline" autorelabel || [ -f /.autorelabel ] ; then
 	restorecon $(awk '!/^#/ && $4 !~ /noauto/ && $2 ~ /^\// { print $2 }' /etc/fstab) >/dev/null 2>&1
     fi
 fi
 
-if [ "$READONLY" != "yes" ] ; then
+if [ "${READONLY}" != "yes" ] ; then
 	# Enter mounted filesystems into /proc/mounts
 	mount -f /
 fi
 
 # Mount /dev/shm
-/bin/mount -t tmpfs -o nosuid,nodev tmpfs /dev/shm >/dev/null 2>&1
+if is_mounted "/dev/shm"; then
+    /bin/umount -f /dev/shm >/dev/null 2>&1
+    /bin/mount -t tmpfs -o nosuid,nodev tmpfs /dev/shm >/dev/null 2>&1
+else
+    /bin/mount -t tmpfs -o nosuid,nodev tmpfs /dev/shm >/dev/null 2>&1
+fi
 
 # Mount all other filesystems (except for NFS and /proc, which is already
 # mounted). Contrary to standard usage,
 # filesystems are NOT unmounted in single user mode.
 # The 'no' applies to all listed filesystem types. See mount(8).
-if [ "$READONLY" != "yes" ] ; then
+if [ "${READONLY}" != "yes" ] ; then
 	action $"Mounting local filesystems: " mount -a -t nonfs,nfs4,smbfs,ncpfs,cifs,gfs,gfs2 -O no_netdev
 else
 	action $"Mounting local filesystems: " mount -a -n -t nonfs,nfs4,smbfs,ncpfs,cifs,gfs,gfs2 -O no_netdev
@@ -515,12 +546,12 @@ if [ -x /sbin/quotaon ]; then
 fi
 
 # Check to see if a full relabel is needed
-if [ -n "$SELINUX_STATE" -a "$READONLY" != "yes" ]; then
+if [ -n "$SELINUX_STATE" -a "${READONLY}" != "yes" ]; then
     if strstr "$cmdline" autorelabel || [ -f /.autorelabel ] ; then
 	relabel_selinux
     fi
 else
-    if [ "$READONLY" != "yes" ] && [ -d /etc/selinux ]; then
+    if [ "${READONLY}" != "yes" ] && [ -d /etc/selinux ]; then
         [ -f /.autorelabel ] || touch /.autorelabel
     fi
 fi
@@ -529,9 +560,9 @@ fi
 if [ -f "/var/lib/random-seed" ]; then
 	cat /var/lib/random-seed > /dev/urandom
 else
-	[ "$READONLY" != "yes" ] && touch /var/lib/random-seed
+	[ "${READONLY}" != "yes" ] && touch /var/lib/random-seed
 fi
-if [ "$READONLY" != "yes" ]; then
+if [ "${READONLY}" != "yes" ]; then
 	chmod 600 /var/lib/random-seed
 	dd if=/dev/urandom of=/var/lib/random-seed count=1 bs=512 2>/dev/null
 fi
@@ -574,6 +605,12 @@ if [ -f /.unconfigured ]; then
     fi
 
     rm -f /.unconfigured
+fi
+
+if [ -x /etc/locale.conf ];then
+    /bin/loadkeys $(/bin/cat /etc/vconsole.conf | /bin/grep KEYTABLE= | /usr/bin/cut -d '=' -f2 |sed -e 's,",,g')
+else
+    /bin/loadkeys $(/bin/cat /etc/sysconfig/keyboard | /bin/grep KEYTABLE= | /usr/bin/cut -d '=' -f2 |sed -e 's,",,g')
 fi
 
 # Clean out /.
@@ -634,8 +671,14 @@ fi
 
 # Set up binfmt_misc
 /bin/mount -t binfmt_misc none /proc/sys/fs/binfmt_misc > /dev/null 2>&1
+
 # Mount /run
-/bin/mount -t tmpfs -o seclabel,nosuid,nodev,mode=755,size=200M tmpfs /run > /dev/null 2>&1 ||:
+if is_mounted "/run"; then
+    echo "/run is already mounted." >/dev/null
+else
+    /bin/mount -t tmpfs -o seclabel,nosuid,nodev,mode=755,size=200M tmpfs /run > /dev/null 2>&1 ||:
+fi
+
 if [ -d /var/run/user ] ; then
 # Mount /var/run/user
    /bin/mount -t tmpfs -o seclabel,nosuid,nodev,mode=755,size=200M tmpfs /var/run/user > /dev/null 2>&1 ||:

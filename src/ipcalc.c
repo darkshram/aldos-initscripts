@@ -11,8 +11,8 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA
+ * along with this program; if not, write to the Free Software Foundation,
+ * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  *
  * Authors:
  *   Erik Troan <ewt@redhat.com>
@@ -30,6 +30,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
+#include <errno.h>
 
 /*!
   \file ipcalc.c
@@ -47,6 +48,24 @@
   take host byte order or network byte order.  Most take host byte order, and
   return host byte order, but there are some exceptions.
 */
+
+int safe_atoi(const char *s, int *ret_i) {
+        char *x = NULL;
+        long l;
+
+        errno = 0;
+        l = strtol(s, &x, 0);
+
+        if (!x || x == s || *x || errno)
+                return errno > 0 ? -errno : -EINVAL;
+
+        if ((long) (int) l != l)
+                return -ERANGE;
+
+        *ret_i = (int) l;
+        return 0;
+}
+
 
 /*!
   \fn struct in_addr prefix2mask(int bits)
@@ -88,6 +107,8 @@ int mask2prefix(struct in_addr mask)
     uint32_t saddr = ntohl(mask.s_addr);
 
     for (count=0; saddr > 0; count++) {
+        if (!((1 << 31) & saddr))
+                return -1;
         saddr=saddr << 1;
     }
 
@@ -141,7 +162,12 @@ struct in_addr calc_broadcast(struct in_addr addr, int prefix)
     struct in_addr broadcast;
 
     memset(&broadcast, 0, sizeof(broadcast));
-    broadcast.s_addr = (addr.s_addr & mask.s_addr) | ~mask.s_addr;
+
+/* if prefix is set to 31 return 255.255.255.255 (RFC3021) */
+    if (mask.s_addr ==  htonl(0xFFFFFFFE))
+        broadcast.s_addr = htonl(0xFFFFFFFF);
+    else
+        broadcast.s_addr = (addr.s_addr & mask.s_addr) | ~mask.s_addr;
     return broadcast;
 }
 
@@ -286,16 +312,17 @@ int main(int argc, const char **argv) {
     }
 
     if (prefixStr != NULL) {
-        prefix = atoi(prefixStr);
-        if (prefix < 0 || ((familyIPv6 && prefix > 128) || (!familyIPv6 && prefix > 32))) {
+    	int r = 0;
+        r = safe_atoi(prefixStr, &prefix);
+        if (r != 0 || prefix < 0 || ((familyIPv6 && prefix > 128) || (!familyIPv6 && prefix > 32))) {
             if (!beSilent)
                 fprintf(stderr, "ipcalc: bad prefix: %s\n", prefixStr);
             return 1;
         }
     }
 
-    if (showBroadcast || showNetwork || showPrefix) {
-        if (!(netmaskStr = (char *) poptGetArg(optCon)) && (prefix < 0)) {
+    if (showBroadcast || showNetwork || showPrefix || doCheck) {
+        if (!(netmaskStr = (char *) poptGetArg(optCon)) && (prefix < 0 && !doCheck)) {
             if (!beSilent) {
                 fprintf(stderr, "ipcalc: netmask or prefix expected\n");
                 poptPrintHelp(optCon, stderr, 0);
@@ -314,6 +341,11 @@ int main(int argc, const char **argv) {
                 return 1;
             }
             prefix = mask2prefix(netmask);
+            if (prefix < 0 ) {
+                if (!beSilent)
+                    fprintf(stderr, "ipcalc: bad netmask: %s\n", netmaskStr);
+                return 1;
+            }
         }
     }
 

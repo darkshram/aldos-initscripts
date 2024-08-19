@@ -2,7 +2,7 @@ CFLAGS+=$(RPM_OPT_FLAGS) -Wall -D_GNU_SOURCE
 
 PROGS=usernetctl netreport testd usleep ipcalc \
 	fstab-decode getkey ppp-watch consoletype genhostid rename_device \
-	console_init console_check securetty
+	console_init securetty
 PPPWATCH_OBJS=ppp-watch.o shvar.o
 CONSOLE_INIT_OBJS=console_init.o shvar.o
 USLEEP_OBJS=usleep.o
@@ -32,7 +32,6 @@ install:
 	install -m 755 sushell $(ROOT)/sbin/sushell
 	install -m 755 rename_device $(ROOT)/lib/udev/rename_device
 	install -m 755 console_init $(ROOT)/lib/udev/console_init
-	install -m 755 console_check $(ROOT)/lib/udev/console_check
 	install -m 644 genhostid.1 $(ROOT)$(mandir)/man1
 	install -m 644 getkey.1 $(ROOT)$(mandir)/man1
 	install -m 644 netreport.1 $(ROOT)$(mandir)/man1

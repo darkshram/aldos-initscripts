@@ -15,28 +15,31 @@ if [ -f /etc/sysconfig/desktop ]; then
 		preferred=/usr/sbin/gdm
 	elif [ "$DISPLAYMANAGER" = KDE ]; then
 		preferred=/usr/bin/sddm
-		splash_quit_command="plymouth quit"
+		splash_quit_command="/bin/plymouth --quit"
+    elif [ "$DISPLAYMANAGER" = CINNAMON ]; then
+        preferred=/usr/sbin/lightdm
+		splash_quit_command="/bin/plymouth --quit"
     elif [ "$DISPLAYMANAGER" = MATE ]; then
         preferred=/usr/sbin/lightdm
-		splash_quit_command="plymouth quit"
+		splash_quit_command="/bin/plymouth --quit"
     elif [ "$DISPLAYMANAGER" = LIGHTDM ]; then
         preferred=/usr/sbin/lightdm
-		splash_quit_command="plymouth quit"
+		splash_quit_command="/bin/plymouth --quit"
     elif [ "$DISPLAYMANAGER" = XFCE ]; then
         preferred=/usr/sbin/lightdm
-		splash_quit_command="plymouth quit"
+		splash_quit_command="/bin/plymouth --quit"
 	elif [ "$DISPLAYMANAGER" = LXQt ]; then
 		preferred=/usr/bin/sddm
-		splash_quit_command="plymouth quit"
+		splash_quit_command="/bin/plymouth --quit"
 	elif [ "$DISPLAYMANAGER" = WDM ]; then
 		preferred=/usr/bin/wdm
-		splash_quit_command="plymouth quit"
+		splash_quit_command="/bin/plymouth --quit"
 	elif [ "$DISPLAYMANAGER" = XDM ]; then
 	        preferred=/usr/bin/xdm
-		splash_quit_command="plymouth quit"
+		splash_quit_command="/bin/plymouth --quit"
         elif [ -n "$DISPLAYMANAGER" ]; then
 		preferred=$DISPLAYMANAGER
-		splash_quit_command="plymouth quit"
+		splash_quit_command="/bin/plymouth --quit"
 	fi
 fi
 
@@ -61,5 +64,5 @@ for pkg in $(rpm -q --qf "%{NAME}\n" --whatprovides "service(graphical-login)"| 
 done
 
 # catch all exit error
-plymouth quit
+/bin/plymouth --quit
 exit 1

@@ -1,9 +1,5 @@
 #!/bin/sh
 
-# make sure we are running upstart. We do not want to manage services if other
-# init system is running (e.g. epoch or openrc).
-if /sbin/initctl list > /dev/null 2> /dev/null ; then
-
 . /etc/init.d/functions
 
 VERSION="$(basename $0) ver. 0.91"
@@ -69,9 +65,3 @@ else
    exit 1
 fi
 
-else
-echo "This program is meant to be used only with upstart or sysvinit."
-/bin/true
-exit 0
-
-fi

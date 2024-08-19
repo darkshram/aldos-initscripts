@@ -27,6 +27,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <ctype.h>
 
 #include <sys/ioctl.h>
 #include <sys/time.h>
@@ -120,6 +121,20 @@ int isCfg(const struct dirent *dent) {
 }
 
 static inline char *dequote(char *start, char *end) {
+	char *c;
+	//remove comments and trailing whitespace
+	for (c = start; c && *c; c++) {
+		c = strchr(c, '#');
+		if (!c)
+			break;
+		if (c > start && isblank(*(c-1))) {
+			*c = '\0';
+			break;
+		}
+	}
+
+	g_strchomp(start);
+
 	if (end==NULL) {
 		end=start;
 		while(*end) end++;
@@ -171,6 +186,8 @@ struct netdev *get_configs() {
 #if defined(__s390__) || defined(__s390x__)
 			if (g_str_has_prefix(lines[i],"SUBCHANNELS=")) {
 				hwaddr = dequote(lines[i] + 12, NULL);
+			} else if (g_str_has_prefix(lines[i],"HWADDR=")) {
+				hwaddr = dequote(lines[i] + 7, NULL);
 			}
 #else
 			if (g_str_has_prefix(lines[i],"HWADDR=")) {
@@ -207,6 +224,13 @@ char *get_hwaddr(char *device) {
 	if (asprintf(&path, "/sys/class/net/%s/device/.", device) == -1)
 		return NULL;
 	contents = read_subchannels(path);
+
+	if (contents == NULL) {
+		if (asprintf(&path, "/sys/class/net/%s/address", device) == -1)
+			return NULL;
+		g_file_get_contents(path, &contents, NULL, NULL);
+	}
+
 #else
 	if (asprintf(&path, "/sys/class/net/%s/address", device) == -1)
 		return NULL;
@@ -241,10 +265,15 @@ void take_lock() {
 	while (1) {
 		lockfd = open(LOCKFILE, O_RDWR|O_CREAT|O_EXCL, 0644);
 		if (lockfd != -1) {
-			write(lockfd,"%d\n",getpid());
+			char buf[32];
+
+			snprintf(buf,32,"%d\n",getpid());
+			write(lockfd,buf,strlen(buf));
 			close(lockfd);
 			break;
-		}
+		} else if (errno == EACCES)
+                        break;
+
 		count++;
 		/* If we've slept for 20 seconds, break the lock. */
 		if (count >= 200) {
